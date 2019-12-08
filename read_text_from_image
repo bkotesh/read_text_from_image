@@ -1,0 +1,127 @@
+def captch_ex(file_name):
+    file_true_false = check_file_available(file_name)
+    if(file_true_false == True ):
+        logging.debug("File Available {}".format(file_name))
+        #print(file_name)
+        img  = cv2.imread(file_name)
+        #print("filenotfound:", file_name)
+        #print(img)
+        img_final = cv2.imread(file_name)
+        img2gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)  #blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        ret, mask = cv2.threshold(img2gray, 180, 255, cv2.THRESH_BINARY)
+        #print("ret",ret, "mask", mask)
+
+        image_final = cv2.bitwise_and(img2gray , img2gray , mask =  mask)
+        ret, new_img = cv2.threshold(image_final, 180 , 255, cv2.THRESH_BINARY)  # for black text , cv.THRESH_BINARY_INV
+        '''
+            To check for contours
+        '''
+        kernel = cv2.getStructuringElement(cv2.MORPH_CROSS,(3 , 3)) # to manipulate the orientation of dilution ,
+                                                                 #large x means horizonatally dilating  more,
+                                                                #large y means vertically dilating more
+        dilated = cv2.dilate(new_img,kernel,iterations = 9) # dilate , more the iteration more the dilation
+    
+        img_dil_th = cv2.adaptiveThreshold(dilated, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 2)
+
+        contours = cv2.findContours(img_dil_th,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)[0] # get contours
+        #print("contours", contours)
+        index = 0
+        max_textt= ''
+        #global d
+        d = {}
+        textt =''
+        full_text=''
+        for contour in contours:
+            # get rectangle bounding contour
+            [x,y,w,h] = cv2.boundingRect(contour)
+
+            #Don't plot small false positives that aren't text
+            if w < 35 and h<35:
+                continue
+
+            # draw rectangle around contour on original image
+            cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,255),2)
+
+            #you can crop image and send to OCR  , false detected will return no text :)
+            cropped = img_final[y :y +  h , x : x + w]
+
+            #Split the path of file to folder and the image
+            head, tail = os.path.split(file_name)
+
+            #s = file_name + 'crop_' + str(index) + '.png'
+            #s = str(head+'_cropped/')+tail + 'crop_' + str(index) + '.png'
+            headdd = 'D:/photovalidation/correct/textimages'
+            s = str(headdd+'_cropped/')+tail + 'crop_' + str(index) + '.png'
+
+            #print(s)
+            #plt.imshow(s)
+            cv2.imwrite(s , cropped)
+            #print(s)
+            head1, tail1 = os.path.split(s)
+            #Images are checked with configuration in pytessart   ####MODEL 1#####
+            #print("Start of model1")
+            try:
+                #textt, textt_lengthh = text_recognition(s, min_confidence, width, height)
+                textt = (re.sub(r'\W+', ' ', pytesseract.image_to_string(s)))
+                print("ppp", textt)
+            except Exception as e:
+                logging.debug("Model 1 Exception: {} : {}".format(tail1,e))   ##Print out put if any exception is thrown while processing the image
+                #pass
+            #print("End of model1")
+            textt_lengthh = len(textt)
+                         
+            if(len(textt) == 0):
+                os.remove(s)
+                #print("Lext length is zero")
+
+
+            #Adding text output to the dictonary. If already available will concat the text or insert
+            if(len(textt)>0):
+                max_textt=textt
+                if tail in tail1:
+                    if tail not in d.keys():
+                        d[tail] = max_textt
+                    else:
+                        d[tail] = d[tail] + "~" + max_textt
+
+
+            index = index + 1
+
+
+        #text_data = print(d)
+        #print(file_name)
+        if tail not in d.keys():
+            try:
+                #full_text, full_text_length = text_recognition(file_name, min_confidence, width, height)
+                textt = (re.sub(r'\W+', ' ', pytesseract.image_to_string(file_name)))
+                print("lll",textt)
+            except Exception as eee:
+                logging.debug("Model 2 {} : {}".format(file_name,eee))
+                #pass
+                
+            textt_lengthh = len(textt)
+            head, tail = os.path.split(file_name)
+    
+            if(len(full_text)>0):
+                    full_max_text=full_text
+                    if tail not in d.keys():
+                        d[tail] = full_max_text
+                    else:
+                        d[tail] = d[tail] + "|" + full_max_text    
+    
+        if tail not in d.keys():
+            d[tail] = "No text found in image"
+        
+        #print(tail, ":", d[tail].replace(" ", "|"))
+        image_file = tail
+        image_text = d[tail].replace(" ", "|")
+        logging.debug('Before: {} : {}'.format(image_file, image_text))
+
+        logging.debug('After: {} : {}'.format(image_file, image_text))
+    else:
+        logging.debug("File Not Available in path {}" .format(file_name))
+        head, tail = os.path.split(file_name)
+        image_file = tail
+        image_text = "File|Not|Available|in|path"
+        logging.debug('Passing to output PHP: {} : {}'.format(image_file, image_text))        
+    print(image_file,":", image_text)
